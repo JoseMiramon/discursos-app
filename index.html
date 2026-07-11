@@ -46,7 +46,6 @@
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #50505a; }
         .selector-field.confirmed .status-dot { background-color: #04d361; box-shadow: 0 0 6px #04d361; }
         
-        /* CORRECCIÓN DESBORDAMIENTO: Control estricto del tamaño de los menús desplegables */
         select { 
             background: #1a1a1e; 
             border: 1px solid #323238; 
@@ -56,8 +55,8 @@
             padding: 6px 8px; 
             border-radius: 6px; 
             outline: none;
-            max-width: 60%; /* Impide que empuje los bordes del teléfono */
-            text-overflow: ellipsis; /* Pone "..." si el texto es excesivamente largo */
+            max-width: 60%; 
+            text-overflow: ellipsis; 
             white-space: nowrap;
             overflow: hidden;
         }
@@ -157,19 +156,19 @@
                 <div class="selector-field" id="field-C6">
                     <div class="selector-label"><div class="status-dot"></div><span>Oración Inicial</span></div>
                     <select id="select-C6" onchange="guardarCelda('C6', this.value)">
-                        <option value="">-- Vacío --</option>
+                        <option value="CLEAR">-- Vacío --</option>
                     </select>
                 </div>
                 <div class="selector-field" id="field-E6">
                     <div class="selector-label"><div class="status-dot"></div><span>Imágenes</span></div>
                     <select id="select-E6" onchange="guardarCelda('E6', this.value)">
-                        <option value="">-- Vacío --</option>
+                        <option value="CLEAR">-- Vacío --</option>
                     </select>
                 </div>
                 <div class="selector-field" id="field-G6">
                     <div class="selector-label"><div class="status-dot"></div><span>Canción</span></div>
                     <select id="select-G6" onchange="guardarCelda('G6', this.value)">
-                        <option value="">-- Vacío --</option>
+                        <option value="CLEAR">-- Vacío --</option>
                     </select>
                 </div>
             </div>
@@ -203,19 +202,22 @@
     let urlsWhatsApp = {};
     const URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbzOQdayFlArx_9txfanr0NHDaraMZc3cysb9BacLhLqy_q17a4brTOFLdL3Iml3-wZd9g/exec";
 
-    window.onload = function() {
-        // CORRECCIÓN: Comprobación de red instantánea al abrir la app desde cero
+    // MEJORA INTEGRADA: Secuencia asíncrona robusta al arrancar
+    window.onload = async function() {
         if (!navigator.onLine) {
             evaluarEstadoRedYAlerta(false);
+        } else {
+            // 1. Antes de descargar, vaciamos de forma prioritaria los cambios del teléfono hacia Google
+            await procesarBuzonDeSalida();
         }
         
+        // 2. Con las ediciones sincronizadas, leemos la base limpia de Sheets
         consultarBaseDeDatos();
         
         window.addEventListener('online', () => evaluarEstadoRedYAlerta(true));
         window.addEventListener('offline', () => evaluarEstadoRedYAlerta(false));
     };
 
-    // CORRECCIÓN: Unifica la alerta instantánea y el procesamiento diferido
     function evaluarEstadoRedYAlerta(estaOnline) {
         const toast = document.getElementById('offline-toast');
         const badge = document.getElementById('badge-offline');
@@ -223,7 +225,8 @@
         if (estaOnline) {
             toast.classList.remove('show');
             badge.style.display = 'none';
-            procesarBuzonDeSalida();
+            // Al recuperar red, vacía el buzón y refresca los datos de inmediato
+            procesarBuzonDeSalida().then(() => consultarBaseDeDatos());
         } else {
             toast.classList.add('show');
             badge.style.display = 'block';
@@ -238,7 +241,6 @@
             const respuesta = await fetch(URL_API_GOOGLE);
             const datosRecibidos = await respuesta.json();
             
-            // CORRECCIÓN: Solo guardamos el respaldo si los datos tienen propiedades válidas
             if (datosRecibidos && datosRecibidos.D3) {
                 localStorage.setItem("respaldo_discursos", JSON.stringify(datosRecibidos));
             }
@@ -246,7 +248,7 @@
             actualizarPantallaVisual(datosRecibidos);
             
         } catch (error) {
-            console.warn("Ejecutando en modo Offline.");
+            console.warn("Ejecutando en modo copia local de respaldo.");
             
             const respaldoLocal = localStorage.getItem("respaldo_discursos");
             if (respaldoLocal && respaldoLocal !== "undefined") {
@@ -302,7 +304,9 @@
 
     function poblarDesplegable(idCelda, opciones, valorActual) {
         const select = document.getElementById('select-' + idCelda);
-        select.innerHTML = '<option value="">-- Vacío --</option>';
+        // MEJORA: El valor por defecto se enlaza al comando "CLEAR"
+        select.innerHTML = '<option value="CLEAR">-- Vacío --</option>';
+        
         opciones.forEach(opt => {
             if(opt && opt.toString().trim() !== "") {
                 let option = document.createElement('option');
@@ -312,7 +316,11 @@
             }
         });
         const field = document.getElementById('field-' + idCelda);
-        if (valorActual && valorActual.toString().trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
+        if (valorActual && valorActual.toString().trim() !== "" && valorActual !== "CLEAR") { 
+            field.classList.add('confirmed'); 
+        } else { 
+            field.classList.remove('confirmed'); 
+        }
     }
 
     /**
@@ -329,7 +337,11 @@
 
     function guardarCelda(celda, valor) {
         const field = document.getElementById('field-' + celda);
-        if (valor && valor.toString().trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
+        if (valor && valor.toString().trim() !== "" && valor !== "CLEAR") { 
+            field.classList.add('confirmed'); 
+        } else { 
+            field.classList.remove('confirmed'); 
+        }
         enviarCambioAGoogle(celda, valor);
     }
 
@@ -354,9 +366,15 @@
         while (buzonEspera.length > 0) {
             const ordenActual = buzonEspera[0];
             
+            // CONEXIÓN MEJORADA: Enviamos mediante FormData estructurado en segundo plano por POST seguro
+            const datosFormulario = new FormData();
+            datosFormulario.append("celda", ordenActual.celda);
+            datosFormulario.append("valor", ordenActual.valor);
+            
             try {
-                await fetch(`${URL_API_GOOGLE}?celda=${ordenActual.celda}&valor=${encodeURIComponent(ordenActual.valor)}`, {
-                    method: 'POST'
+                await fetch(URL_API_GOOGLE, {
+                    method: 'POST',
+                    body: datosFormulario
                 });
                 
                 buzonEspera.shift();
