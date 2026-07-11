@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    
     <link rel="manifest" href="manifest.json">
 
     <link rel="icon" type="image/png" sizes="32x32" href="https://img.icons8.com/fluent/32/000000/open-book.png">
@@ -30,6 +29,7 @@
         .speaker-info-text .label { font-size: 11px; color: #96969a; text-transform: uppercase; }
         .speaker-info-text .name { font-size: 18px; font-weight: bold; color: #ffffff; }
         .divider { height: 1px; background-color: #29292e; margin: 10px 0; }
+        .info-row { font-size: 14px; margin-bottom: 4px; }
         .info-row .label { font-size: 11px; color: #8d8d99; }
         .info-row .value { font-size: 14px; color: #e1e1e6; font-weight: 500; }
         .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
@@ -46,7 +46,6 @@
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #50505a; }
         .selector-field.confirmed .status-dot { background-color: #04d361; box-shadow: 0 0 6px #04d361; }
         
-        /* CORRECCIÓN DESBORDAMIENTO: Control estricto del tamaño de los menús desplegables */
         select { 
             background: #1a1a1e; 
             border: 1px solid #323238; 
@@ -56,8 +55,8 @@
             padding: 6px 8px; 
             border-radius: 6px; 
             outline: none;
-            max-width: 60%; /* Impide que empuje los bordes del teléfono */
-            text-overflow: ellipsis; /* Pone "..." si el texto es excesivamente largo */
+            max-width: 60%; 
+            text-overflow: ellipsis; 
             white-space: nowrap;
             overflow: hidden;
         }
@@ -157,19 +156,19 @@
                 <div class="selector-field" id="field-C6">
                     <div class="selector-label"><div class="status-dot"></div><span>Oración Inicial</span></div>
                     <select id="select-C6" onchange="guardarCelda('C6', this.value)">
-                        <option value="">-- Vacío --</option>
+                        <option value="CLEAR">-- Vacío --</option>
                     </select>
                 </div>
                 <div class="selector-field" id="field-E6">
                     <div class="selector-label"><div class="status-dot"></div><span>Imágenes</span></div>
                     <select id="select-E6" onchange="guardarCelda('E6', this.value)">
-                        <option value="">-- Vacío --</option>
+                        <option value="CLEAR">-- Vacío --</option>
                     </select>
                 </div>
                 <div class="selector-field" id="field-G6">
                     <div class="selector-label"><div class="status-dot"></div><span>Canción</span></div>
                     <select id="select-G6" onchange="guardarCelda('G6', this.value)">
-                        <option value="">-- Vacío --</option>
+                        <option value="CLEAR">-- Vacío --</option>
                     </select>
                 </div>
             </div>
@@ -203,19 +202,21 @@
     let urlsWhatsApp = {};
     const URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbyw_sgo8v4Nf7BNBiY9ujw4nxULL3tydyiPVLJStWt9TlAUETo6Mf6QPHNCu5C_XfJhqg/exec";
 
-    window.onload = function() {
-        // CORRECCIÓN: Comprobación de red instantánea al abrir la app desde cero
+    window.onload = async function() {
         if (!navigator.onLine) {
             evaluarEstadoRedYAlerta(false);
+        } else {
+            // CORRECCIÓN PUNTO 4: Si abres la app con red, PRIMERO vaciamos las tareas pendientes
+            await procesarBuzonDeSalida();
         }
         
+        // Una vez asegurado el buzón, procedemos a leer los datos limpios
         consultarBaseDeDatos();
         
         window.addEventListener('online', () => evaluarEstadoRedYAlerta(true));
         window.addEventListener('offline', () => evaluarEstadoRedYAlerta(false));
     };
 
-    // CORRECCIÓN: Unifica la alerta instantánea y el procesamiento diferido
     function evaluarEstadoRedYAlerta(estaOnline) {
         const toast = document.getElementById('offline-toast');
         const badge = document.getElementById('badge-offline');
@@ -223,7 +224,7 @@
         if (estaOnline) {
             toast.classList.remove('show');
             badge.style.display = 'none';
-            procesarBuzonDeSalida();
+            procesarBuzonDeSalida().then(() => consultarBaseDeDatos());
         } else {
             toast.classList.add('show');
             badge.style.display = 'block';
@@ -238,7 +239,6 @@
             const respuesta = await fetch(URL_API_GOOGLE);
             const datosRecibidos = await respuesta.json();
             
-            // CORRECCIÓN: Solo guardamos el respaldo si los datos tienen propiedades válidas
             if (datosRecibidos && datosRecibidos.D3) {
                 localStorage.setItem("respaldo_discursos", JSON.stringify(datosRecibidos));
             }
@@ -246,14 +246,14 @@
             actualizarPantallaVisual(datosRecibidos);
             
         } catch (error) {
-            console.warn("Ejecutando en modo Offline.");
+            console.warn("Ejecutando copia de respaldo.");
             
             const respaldoLocal = localStorage.getItem("respaldo_discursos");
             if (respaldoLocal && respaldoLocal !== "undefined") {
                 document.getElementById('offline-notice').style.display = 'block';
                 actualizarPantallaVisual(JSON.parse(respaldoLocal));
             } else {
-                document.getElementById('loading').innerText = "Sin conexión y sin datos locales guardados.";
+                document.getElementById('loading').innerText = "Sin conexión y sin datos locales.";
             }
         }
     }
@@ -302,7 +302,9 @@
 
     function poblarDesplegable(idCelda, opciones, valorActual) {
         const select = document.getElementById('select-' + idCelda);
-        select.innerHTML = '<option value="">-- Vacío --</option>';
+        // CORRECCIÓN PUNTO 5: El valor por defecto al vaciar es "CLEAR"
+        select.innerHTML = '<option value="CLEAR">-- Vacío --</option>';
+        
         opciones.forEach(opt => {
             if(opt && opt.toString().trim() !== "") {
                 let option = document.createElement('option');
@@ -312,7 +314,11 @@
             }
         });
         const field = document.getElementById('field-' + idCelda);
-        if (valorActual && valorActual.toString().trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
+        if (valorActual && valorActual.toString().trim() !== "" && valorActual !== "CLEAR") { 
+            field.classList.add('confirmed'); 
+        } else { 
+            field.classList.remove('confirmed'); 
+        }
     }
 
     /**
@@ -329,7 +335,11 @@
 
     function guardarCelda(celda, valor) {
         const field = document.getElementById('field-' + celda);
-        if (valor && valor.toString().trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
+        if (valor && valor.toString().trim() !== "" && valor !== "CLEAR") { 
+            field.classList.add('confirmed'); 
+        } else { 
+            field.classList.remove('confirmed'); 
+        }
         enviarCambioAGoogle(celda, valor);
     }
 
@@ -339,6 +349,8 @@
     function enviarCambioAGoogle(celdaAEditar, nuevoValor) {
         const orden = { celda: celdaAEditar, valor: nuevoValor };
         let buzonEspera = JSON.parse(localStorage.getItem("buzon_offline")) || [];
+        
+        // Guardamos de inmediato en el almacenamiento local del teléfono
         buzonEspera.push(orden);
         localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
 
@@ -359,11 +371,12 @@
                     method: 'POST'
                 });
                 
+                // Si el servidor de Google lo procesó bien, lo sacamos de la cola
                 buzonEspera.shift();
                 localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
                 
             } catch (error) {
-                console.error("Fallo de red al sincronizar tarea diferida.", error);
+                console.error("Fallo de envío temporal. Reteniendo cambios en el teléfono.", error);
                 break; 
             }
         }
