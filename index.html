@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
+    <link rel="manifest" href="manifest.json">
+
     <link rel="icon" type="image/png" sizes="32x32" href="https://img.icons8.com/fluent/32/000000/open-book.png">
     <link rel="apple-touch-icon" sizes="180x180" href="https://img.icons8.com/fluent/192/000000/open-book.png">
     <link rel="icon" type="image/png" sizes="192x192" href="https://img.icons8.com/fluent/192/000000/open-book.png">
@@ -36,13 +38,30 @@
         .meta-item-text .label { font-size: 10px; color: #8d8d99; }
         .meta-item-text .value { font-size: 13px; font-weight: bold; color: #ffffff; }
         .theme-title { font-size: 15px; font-weight: 600; color: #ffffff; line-height: 1.4; margin-bottom: 8px; }
+        
         .selectors-container { display: flex; flex-direction: column; gap: 8px; }
-        .selector-field { display: flex; justify-content: space-between; align-items: center; background-color: #29292e; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent; }
+        .selector-field { display: flex; justify-content: space-between; align-items: center; background-color: #29292e; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent; gap: 10px; }
         .selector-field.confirmed { background-color: rgba(4, 211, 97, 0.12); border: 1px solid #04d361; }
-        .selector-label { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+        .selector-label { font-size: 13px; display: flex; align-items: center; gap: 8px; min-width: 100px; flex-shrink: 0; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #50505a; }
         .selector-field.confirmed .status-dot { background-color: #04d361; box-shadow: 0 0 6px #04d361; }
-        select { background: #1a1a1e; border: 1px solid #323238; color: #ffffff; font-size: 13px; font-weight: bold; padding: 4px 8px; border-radius: 6px; outline: none; }
+        
+        /* CORRECCIÓN DESBORDAMIENTO: Control estricto del tamaño de los menús desplegables */
+        select { 
+            background: #1a1a1e; 
+            border: 1px solid #323238; 
+            color: #ffffff; 
+            font-size: 13px; 
+            font-weight: bold; 
+            padding: 6px 8px; 
+            border-radius: 6px; 
+            outline: none;
+            max-width: 60%; /* Impide que empuje los bordes del teléfono */
+            text-overflow: ellipsis; /* Pone "..." si el texto es excesivamente largo */
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
         .actions-container { display: flex; flex-direction: column; gap: 8px; }
         .action-btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .btn { padding: 12px; border-radius: 10px; border: none; font-size: 13px; font-weight: bold; color: white; display: flex; align-items: center; justify-content: space-between; cursor: pointer; text-decoration: none; }
@@ -51,10 +70,10 @@
         .btn-directo { background-color: #494d4b; }
         .btn-status-pill { font-size: 10px; padding: 2px 6px; border-radius: 4px; background-color: rgba(255,255,255,0.15); font-weight: normal; }
         .btn.completed { opacity: 0.4; }
+        
         #loading { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #121214; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 16px; font-weight: bold; z-index: 100; gap: 10px; }
         .offline-badge { background-color: #d97706; color: white; padding: 4px 8px; font-size: 11px; border-radius: 4px; display: none; font-weight: bold; }
 
-        /* Notificación Flotante Estilo Toast */
         .toast-offline {
             position: fixed;
             bottom: 20px;
@@ -185,42 +204,52 @@
     const URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbyw_sgo8v4Nf7BNBiY9ujw4nxULL3tydyiPVLJStWt9TlAUETo6Mf6QPHNCu5C_XfJhqg/exec";
 
     window.onload = function() {
+        // CORRECCIÓN: Comprobación de red instantánea al abrir la app desde cero
+        if (!navigator.onLine) {
+            evaluarEstadoRedYAlerta(false);
+        }
+        
         consultarBaseDeDatos();
         
-        // Listeners nativos para controlar la burbuja flotante y sincronización automática
-        window.addEventListener('online', () => {
-            document.getElementById('offline-toast').classList.remove('show');
-            document.getElementById('badge-offline').style.display = 'none';
-            procesarBuzonDeSalida(); 
-        });
-        
-        window.addEventListener('offline', () => {
-            document.getElementById('offline-toast').classList.add('show');
-            document.getElementById('badge-offline').style.display = 'block';
-        });
+        window.addEventListener('online', () => evaluarEstadoRedYAlerta(true));
+        window.addEventListener('offline', () => evaluarEstadoRedYAlerta(false));
     };
 
+    // CORRECCIÓN: Unifica la alerta instantánea y el procesamiento diferido
+    function evaluarEstadoRedYAlerta(estaOnline) {
+        const toast = document.getElementById('offline-toast');
+        const badge = document.getElementById('badge-offline');
+        
+        if (estaOnline) {
+            toast.classList.remove('show');
+            badge.style.display = 'none';
+            procesarBuzonDeSalida();
+        } else {
+            toast.classList.add('show');
+            badge.style.display = 'block';
+        }
+    }
+
     /**
-     * 🧱 BLOQUE 1: EL CONECTOR ASÍNCRONO + CACHÉ COPIA LOCAL (OFFLINE)
+     * 🧱 BLOQUE 1: EL CONECTOR ASÍNCRONO + CACHÉ COPIA LOCAL
      */
     async function consultarBaseDeDatos() {
         try {
             const respuesta = await fetch(URL_API_GOOGLE);
             const datosRecibidos = await respuesta.json();
             
-            localStorage.setItem("respaldo_discursos", JSON.stringify(datosRecibidos));
+            // CORRECCIÓN: Solo guardamos el respaldo si los datos tienen propiedades válidas
+            if (datosRecibidos && datosRecibidos.D3) {
+                localStorage.setItem("respaldo_discursos", JSON.stringify(datosRecibidos));
+            }
             
             actualizarPantallaVisual(datosRecibidos);
             
         } catch (error) {
             console.warn("Ejecutando en modo Offline.");
-            if(!navigator.onLine) {
-                document.getElementById('offline-toast').classList.add('show');
-                document.getElementById('badge-offline').style.display = 'block';
-            }
             
             const respaldoLocal = localStorage.getItem("respaldo_discursos");
-            if (respaldoLocal) {
+            if (respaldoLocal && respaldoLocal !== "undefined") {
                 document.getElementById('offline-notice').style.display = 'block';
                 actualizarPantallaVisual(JSON.parse(respaldoLocal));
             } else {
@@ -230,25 +259,25 @@
     }
 
     /**
-     * 🧱 BLOQUE 2: EL PINTOR VISUAL (REPRESENTACIÓN DE DATOS)
+     * 🧱 BLOQUE 2: EL PINTOR VISUAL
      */
     function actualizarPantallaVisual(data) {
         document.getElementById('loading').style.display = 'none';
         
-        document.getElementById('txt-fecha').innerText = data.D3;
-        document.getElementById('txt-orador').innerText = data.D4;
-        document.getElementById('txt-discurso').innerText = data.D5;
-        document.getElementById('txt-congregacion').innerText = data.D7;
-        document.getElementById('txt-hospitalidad').innerText = data.D8;
-        document.getElementById('txt-grupo').innerText = data.D9;
+        document.getElementById('txt-fecha').innerText = data.D3 || '';
+        document.getElementById('txt-orador').innerText = data.D4 || '';
+        document.getElementById('txt-discurso').innerText = data.D5 || '';
+        document.getElementById('txt-congregacion').innerText = data.D7 || '';
+        document.getElementById('txt-hospitalidad').innerText = data.D8 || '';
+        document.getElementById('txt-grupo').innerText = data.D9 || '';
 
-        urlsWhatsApp['C11'] = data.C11_url;
-        urlsWhatsApp['C12'] = data.C12_url;
-        urlsWhatsApp['F11'] = data.F11_url;
+        urlsWhatsApp['C11'] = data.C11_url || '';
+        urlsWhatsApp['C12'] = data.C12_url || '';
+        urlsWhatsApp['F11'] = data.F11_url || '';
 
-        poblarDesplegable('C6', data.C6_opciones, data.C6_valor);
-        poblarDesplegable('E6', data.E6_opciones, data.E6_valor);
-        poblarDesplegable('G6', data.G6_opciones, data.G6_valor);
+        poblarDesplegable('C6', data.C6_opciones || [], data.C6_valor || '');
+        poblarDesplegable('E6', data.E6_opciones || [], data.E6_valor || '');
+        poblarDesplegable('G6', data.G6_opciones || [], data.G6_valor || '');
 
         verificarEstadoBoton('C11', data.B11_check);
         verificarEstadoBoton('C12', data.B12_check);
@@ -256,7 +285,7 @@
     }
 
     /**
-     * 🧱 BLOQUE 3: EL INTERRUPTOR INTELIGENTE (ESTILOS Y FORMATO)
+     * 🧱 BLOQUE 3: EL INTERRUPTOR INTELIGENTE
      */
     function verificarEstadoBoton(idBoton, estaMarcado) {
         const boton = document.getElementById('btn-' + idBoton);
@@ -275,7 +304,7 @@
         const select = document.getElementById('select-' + idCelda);
         select.innerHTML = '<option value="">-- Vacío --</option>';
         opciones.forEach(opt => {
-            if(opt.trim() !== "") {
+            if(opt && opt.toString().trim() !== "") {
                 let option = document.createElement('option');
                 option.value = opt; option.text = opt;
                 if(opt === valorActual) option.selected = true;
@@ -283,11 +312,11 @@
             }
         });
         const field = document.getElementById('field-' + idCelda);
-        if (valorActual && valorActual.trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
+        if (valorActual && valorActual.toString().trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
     }
 
     /**
-     * 🧱 BLOQUE 4: ACCIÓN DE DOBLE PROPÓSITO (DISPARADOR)
+     * 🧱 BLOQUE 4: ACCIÓN DE DOBLE PROPÓSITO
      */
     function ejecutarAccionBoton(idBoton, celdaCheckbox) {
         const url = urlsWhatsApp[idBoton];
@@ -300,12 +329,12 @@
 
     function guardarCelda(celda, valor) {
         const field = document.getElementById('field-' + celda);
-        if (valor && valor.trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
+        if (valor && valor.toString().trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
         enviarCambioAGoogle(celda, valor);
     }
 
     /**
-     * 🧱 BLOQUE 5: EL MENSAJERO Y EL BUZÓN DE SALIDA (SINCRONIZADOR OFFLINE)
+     * 🧱 BLOQUE 5: EL MENSAJERO Y EL BUZÓN DE SALIDA (SINCRONIZADOR)
      */
     function enviarCambioAGoogle(celdaAEditar, nuevoValor) {
         const orden = { celda: celdaAEditar, valor: nuevoValor };
