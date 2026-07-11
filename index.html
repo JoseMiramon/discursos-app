@@ -30,7 +30,7 @@
         .speaker-info-text .label { font-size: 11px; color: #96969a; text-transform: uppercase; }
         .speaker-info-text .name { font-size: 18px; font-weight: bold; color: #ffffff; }
         .divider { height: 1px; background-color: #29292e; margin: 10px 0; }
-        .info-row .label { font-size: 11px; color: #8d8d99; }
+        .info-row { font-size: 11px; color: #8d8d99; }
         .info-row .value { font-size: 14px; color: #e1e1e6; font-weight: 500; }
         .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
         .meta-grid .meta-item { background-color: #29292e; padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; gap: 8px; }
@@ -134,7 +134,7 @@
             </div>
             <div class="meta-grid">
                 <div class="meta-item active-local">
-                    <span>🫱🏻‍🫲🏽</span>
+                    <span>✅</span>
                     <div class="meta-item-text">
                         <div class="label">Hospitalidad</div>
                         <div class="value" id="txt-hospitalidad">...</div>
@@ -203,11 +203,9 @@
     const URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbzX1mLjP5wTNxWL39BQ8vhpo7_Uvc1olUD5CYF_Yy7UURdVA0P22opE6dL_P5busFmjbA/exec";
 
     window.onload = function() {
-        // CORRECCIÓN PUNTO 4: Verificar estado inicial antes de disparar consultas cruzadas
         if (!navigator.onLine) {
             evaluarEstadoRedYAlerta(false);
         }
-        
         consultarBaseDeDatos();
         
         window.addEventListener('online', () => evaluarEstadoRedYAlerta(true));
@@ -221,7 +219,6 @@
         if (estaOnline) {
             toast.classList.remove('show');
             badge.style.display = 'none';
-            // Al regresar a la red, PRIMERO enviamos lo que el usuario editó en modo offline
             procesarBuzonDeSalida();
         } else {
             toast.classList.add('show');
@@ -229,11 +226,7 @@
         }
     }
 
-    /**
-     * 🧱 BLOQUE 1: EL CONECTOR ASÍNCRONO + CACHÉ COPIA LOCAL
-     */
     async function consultarBaseDeDatos() {
-        // CORRECCIÓN PUNTO 4: Si hay operaciones en cola pendientes de enviarse, no leemos datos antiguos de la nube todavía
         let buzonEspera = JSON.parse(localStorage.getItem("buzon_offline")) || [];
         if (navigator.onLine && buzonEspera.length > 0) {
             await procesarBuzonDeSalida();
@@ -262,9 +255,6 @@
         }
     }
 
-    /**
-     * 🧱 BLOQUE 2: EL PINTOR VISUAL
-     */
     function actualizarPantallaVisual(data) {
         document.getElementById('loading').style.display = 'none';
         
@@ -288,9 +278,6 @@
         verificarEstadoBoton('F11', data.E11_check);
     }
 
-    /**
-     * 🧱 BLOQUE 3: EL INTERRUPTOR INTELIGENTE
-     */
     function verificarEstadoBoton(idBoton, estaMarcado) {
         const boton = document.getElementById('btn-' + idBoton);
         const etiqueta = document.getElementById('pill-' + idBoton);
@@ -323,9 +310,6 @@
         }
     }
 
-    /**
-     * 🧱 BLOQUE 4: ACCIÓN DE DOBLE PROPÓSITO
-     */
     function ejecutarAccionBoton(idBoton, celdaCheckbox) {
         const url = urlsWhatsApp[idBoton];
         if (url) {
@@ -335,27 +319,21 @@
         }
     }
 
+    // CORRECCIÓN PUNTO 2 y 6: El condicional ahora valida correctamente los textos vacíos para remover el estilo estético 'confirmed'
     function guardarCelda(celda, valor) {
         const field = document.getElementById('field-' + celda);
-        if (valor && valor.toString().trim() !== "") { 
+        if (valor !== undefined && valor !== null && valor.toString().trim() !== "") { 
             field.classList.add('confirmed'); 
         } else { 
-            field.classList.remove('remove'); 
             field.classList.remove('confirmed');
         }
         enviarCambioAGoogle(celda, valor);
     }
 
-    /**
-     * 🧱 BLOQUE 5: EL MENSAJERO Y EL BUZÓN DE SALIDA (SINCRONIZADOR)
-     */
     function enviarCambioAGoogle(celdaAEditar, nuevoValor) {
-        // CORRECCIÓN PUNTO 4: Guardamos instantáneamente en el respaldo local de la UI 
-        // para que si cierras la app sin red, mantenga tu cambio visual al abrirse.
         let respaldoLocal = localStorage.getItem("respaldo_discursos");
         if (respaldoLocal) {
             let data = JSON.parse(respaldoLocal);
-            // Mapeamos el cambio al campo correspondiente del JSON de respaldo
             if (celdaAEditar === "C6") data.C6_valor = nuevoValor;
             if (celdaAEditar === "E6") data.E6_valor = nuevoValor;
             if (celdaAEditar === "G6") data.G6_valor = nuevoValor;
@@ -383,7 +361,6 @@
             const ordenActual = buzonEspera[0];
             
             try {
-                // CORRECCIÓN PUNTO 5: Se usa encodeURIComponent para pasar parámetros vacíos de forma correcta a Google Apps Script
                 await fetch(`${URL_API_GOOGLE}?celda=${ordenActual.celda}&valor=${encodeURIComponent(ordenActual.valor)}`, {
                     method: 'POST'
                 });
@@ -397,7 +374,6 @@
             }
         }
 
-        // Una vez que el buzón se vació por completo, hacemos el fetch limpio para traer datos actualizados reales
         if(buzonEspera.length === 0) {
             const respuesta = await fetch(URL_API_GOOGLE);
             const datosRecibidos = await respuesta.json();
