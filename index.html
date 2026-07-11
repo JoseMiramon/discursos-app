@@ -200,15 +200,12 @@
 
 <script>
     let urlsWhatsApp = {};
-    // REEMPLAZAR AQUÍ CON TU URL DE IMPLEMENTACIÓN DE GOOGLE SHEETS
-    const URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbzYfbnX_MNRp7ChmXsEbq1Bhp5HNtv1sERYTLMsCkvoWhnF6-vEy5QBED59e39hfz2SHQ/exec";
+    const URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbyw_sgo8v4Nf7BNBiY9ujw4nxULL3tydyiPVLJStWt9TlAUETo6Mf6QPHNCu5C_XfJhqg/exec";
 
-    window.onload = async function() {
+    window.onload = function() {
+        // CORRECCIÓN: Comprobación de red instantánea al abrir la app desde cero
         if (!navigator.onLine) {
             evaluarEstadoRedYAlerta(false);
-        } else {
-            // Sincroniza el buzón local antes de hacer cualquier lectura limpia
-            await procesarBuzonDeSalida();
         }
         
         consultarBaseDeDatos();
@@ -217,6 +214,7 @@
         window.addEventListener('offline', () => evaluarEstadoRedYAlerta(false));
     };
 
+    // CORRECCIÓN: Unifica la alerta instantánea y el procesamiento diferido
     function evaluarEstadoRedYAlerta(estaOnline) {
         const toast = document.getElementById('offline-toast');
         const badge = document.getElementById('badge-offline');
@@ -224,7 +222,7 @@
         if (estaOnline) {
             toast.classList.remove('show');
             badge.style.display = 'none';
-            procesarBuzonDeSalida().then(() => consultarBaseDeDatos());
+            procesarBuzonDeSalida();
         } else {
             toast.classList.add('show');
             badge.style.display = 'block';
@@ -239,6 +237,7 @@
             const respuesta = await fetch(URL_API_GOOGLE);
             const datosRecibidos = await respuesta.json();
             
+            // CORRECCIÓN: Solo guardamos el respaldo si los datos tienen propiedades válidas
             if (datosRecibidos && datosRecibidos.D3) {
                 localStorage.setItem("respaldo_discursos", JSON.stringify(datosRecibidos));
             }
@@ -246,14 +245,14 @@
             actualizarPantallaVisual(datosRecibidos);
             
         } catch (error) {
-            console.warn("Ejecutando copia de respaldo local.");
+            console.warn("Ejecutando en modo Offline.");
             
             const respaldoLocal = localStorage.getItem("respaldo_discursos");
             if (respaldoLocal && respaldoLocal !== "undefined") {
                 document.getElementById('offline-notice').style.display = 'block';
                 actualizarPantallaVisual(JSON.parse(respaldoLocal));
             } else {
-                document.getElementById('loading').innerText = "Sin conexión y sin datos locales.";
+                document.getElementById('loading').innerText = "Sin conexión y sin datos locales guardados.";
             }
         }
     }
@@ -302,8 +301,7 @@
 
     function poblarDesplegable(idCelda, opciones, valorActual) {
         const select = document.getElementById('select-' + idCelda);
-        select.innerHTML = '<option value="CLEAR">-- Vacío --</option>';
-        
+        select.innerHTML = '<option value="">-- Vacío --</option>';
         opciones.forEach(opt => {
             if(opt && opt.toString().trim() !== "") {
                 let option = document.createElement('option');
@@ -313,11 +311,7 @@
             }
         });
         const field = document.getElementById('field-' + idCelda);
-        if (valorActual && valorActual.toString().trim() !== "" && valorActual !== "CLEAR") { 
-            field.classList.add('confirmed'); 
-        } else { 
-            field.classList.remove('confirmed'); 
-        }
+        if (valorActual && valorActual.toString().trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
     }
 
     /**
@@ -334,21 +328,16 @@
 
     function guardarCelda(celda, valor) {
         const field = document.getElementById('field-' + celda);
-        if (valor && valor.toString().trim() !== "" && valor !== "CLEAR") { 
-            field.classList.add('confirmed'); 
-        } else { 
-            field.classList.remove('confirmed'); 
-        }
+        if (valor && valor.toString().trim() !== "") { field.classList.add('confirmed'); } else { field.classList.remove('confirmed'); }
         enviarCambioAGoogle(celda, valor);
     }
 
     /**
-     * 🧱 BLOQUE 5: EL MENSAJERO ASÍNCRONO SEGURO (RETORNO A PETICIÓN URL GET)
+     * 🧱 BLOQUE 5: EL MENSAJERO Y EL BUZÓN DE SALIDA (SINCRONIZADOR)
      */
     function enviarCambioAGoogle(celdaAEditar, nuevoValor) {
         const orden = { celda: celdaAEditar, valor: nuevoValor };
         let buzonEspera = JSON.parse(localStorage.getItem("buzon_offline")) || [];
-        
         buzonEspera.push(orden);
         localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
 
@@ -364,18 +353,16 @@
         while (buzonEspera.length > 0) {
             const ordenActual = buzonEspera[0];
             
-            // CONEXIÓN ROBUSTA: Construimos una URL directa limpia con método GET tradicional
-            const urlLimpia = `${URL_API_GOOGLE}?celda=${ordenActual.celda}&valor=${encodeURIComponent(ordenActual.valor)}`;
-            
             try {
-                await fetch(urlLimpia, { method: 'GET' });
+                await fetch(`${URL_API_GOOGLE}?celda=${ordenActual.celda}&valor=${encodeURIComponent(ordenActual.valor)}`, {
+                    method: 'POST'
+                });
                 
-                // Si la petición URL fue exitosa, la eliminamos del buzón local
                 buzonEspera.shift();
                 localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
                 
             } catch (error) {
-                console.error("Fallo temporal de tránsito. Reteniendo cola.", error);
+                console.error("Fallo de red al sincronizar tarea diferida.", error);
                 break; 
             }
         }
