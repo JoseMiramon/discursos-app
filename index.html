@@ -200,17 +200,17 @@
 
 <script>
     let urlsWhatsApp = {};
-    const URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbw8oxMM26M3JdoBBjP8sdxp0MI7cU4pr2eBQZi3CsW1Il_-h8BqfubVZkcE-angyZnkSQ/exec";
+    // REEMPLAZAR AQUÍ CON TU URL DE IMPLEMENTACIÓN DE GOOGLE SHEETS
+    const URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbzYfbnX_MNRp7ChmXsEbq1Bhp5HNtv1sERYTLMsCkvoWhnF6-vEy5QBED59e39hfz2SHQ/exec";
 
     window.onload = async function() {
         if (!navigator.onLine) {
             evaluarEstadoRedYAlerta(false);
         } else {
-            // CORRECCIÓN PUNTO 4: Si abres la app con red, PRIMERO vaciamos las tareas pendientes
+            // Sincroniza el buzón local antes de hacer cualquier lectura limpia
             await procesarBuzonDeSalida();
         }
         
-        // Una vez asegurado el buzón, procedemos a leer los datos limpios
         consultarBaseDeDatos();
         
         window.addEventListener('online', () => evaluarEstadoRedYAlerta(true));
@@ -246,7 +246,7 @@
             actualizarPantallaVisual(datosRecibidos);
             
         } catch (error) {
-            console.warn("Ejecutando copia de respaldo.");
+            console.warn("Ejecutando copia de respaldo local.");
             
             const respaldoLocal = localStorage.getItem("respaldo_discursos");
             if (respaldoLocal && respaldoLocal !== "undefined") {
@@ -302,7 +302,6 @@
 
     function poblarDesplegable(idCelda, opciones, valorActual) {
         const select = document.getElementById('select-' + idCelda);
-        // CORRECCIÓN PUNTO 5: El valor por defecto al vaciar es "CLEAR"
         select.innerHTML = '<option value="CLEAR">-- Vacío --</option>';
         
         opciones.forEach(opt => {
@@ -344,13 +343,12 @@
     }
 
     /**
-     * 🧱 BLOQUE 5: EL MENSAJERO Y EL BUZÓN DE SALIDA (SINCRONIZADOR)
+     * 🧱 BLOQUE 5: EL MENSAJERO ASÍNCRONO SEGURO (RETORNO A PETICIÓN URL GET)
      */
     function enviarCambioAGoogle(celdaAEditar, nuevoValor) {
         const orden = { celda: celdaAEditar, valor: nuevoValor };
         let buzonEspera = JSON.parse(localStorage.getItem("buzon_offline")) || [];
         
-        // Guardamos de inmediato en el almacenamiento local del teléfono
         buzonEspera.push(orden);
         localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
 
@@ -358,35 +356,30 @@
     }
 
     async function procesarBuzonDeSalida() {
-    if (!navigator.onLine) return;
+        if (!navigator.onLine) return;
 
-    let buzonEspera = JSON.parse(localStorage.getItem("buzon_offline")) || [];
-    if (buzonEspera.length === 0) return;
+        let buzonEspera = JSON.parse(localStorage.getItem("buzon_offline")) || [];
+        if (buzonEspera.length === 0) return;
 
-    while (buzonEspera.length > 0) {
-        const ordenActual = buzonEspera[0];
-        
-        // CORRECCIÓN: Empaquetamos los datos como un formulario nativo para que Google los reciba sin problemas por POST
-        const datosFormulario = new FormData();
-        datosFormulario.append("celda", ordenActual.celda);
-        datosFormulario.append("valor", ordenActual.valor);
-        
-        try {
-            await fetch(URL_API_GOOGLE, {
-                method: 'POST',
-                body: datosFormulario
-            });
+        while (buzonEspera.length > 0) {
+            const ordenActual = buzonEspera[0];
             
-            // Si el servidor de Google lo procesó con éxito, lo sacamos de la cola
-            buzonEspera.shift();
-            localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
+            // CONEXIÓN ROBUSTA: Construimos una URL directa limpia con método GET tradicional
+            const urlLimpia = `${URL_API_GOOGLE}?celda=${ordenActual.celda}&valor=${encodeURIComponent(ordenActual.valor)}`;
             
-        } catch (error) {
-            console.error("Fallo de envío temporal. Reteniendo cambios en el teléfono.", error);
-            break; 
+            try {
+                await fetch(urlLimpia, { method: 'GET' });
+                
+                // Si la petición URL fue exitosa, la eliminamos del buzón local
+                buzonEspera.shift();
+                localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
+                
+            } catch (error) {
+                console.error("Fallo temporal de tránsito. Reteniendo cola.", error);
+                break; 
+            }
         }
     }
-}
 </script>
 </body>
 </html>
