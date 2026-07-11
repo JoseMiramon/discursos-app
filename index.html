@@ -358,29 +358,35 @@
     }
 
     async function procesarBuzonDeSalida() {
-        if (!navigator.onLine) return;
+    if (!navigator.onLine) return;
 
-        let buzonEspera = JSON.parse(localStorage.getItem("buzon_offline")) || [];
-        if (buzonEspera.length === 0) return;
+    let buzonEspera = JSON.parse(localStorage.getItem("buzon_offline")) || [];
+    if (buzonEspera.length === 0) return;
 
-        while (buzonEspera.length > 0) {
-            const ordenActual = buzonEspera[0];
+    while (buzonEspera.length > 0) {
+        const ordenActual = buzonEspera[0];
+        
+        // CORRECCIÓN: Empaquetamos los datos como un formulario nativo para que Google los reciba sin problemas por POST
+        const datosFormulario = new FormData();
+        datosFormulario.append("celda", ordenActual.celda);
+        datosFormulario.append("valor", ordenActual.valor);
+        
+        try {
+            await fetch(URL_API_GOOGLE, {
+                method: 'POST',
+                body: datosFormulario
+            });
             
-            try {
-                await fetch(`${URL_API_GOOGLE}?celda=${ordenActual.celda}&valor=${encodeURIComponent(ordenActual.valor)}`, {
-                    method: 'POST'
-                });
-                
-                // Si el servidor de Google lo procesó bien, lo sacamos de la cola
-                buzonEspera.shift();
-                localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
-                
-            } catch (error) {
-                console.error("Fallo de envío temporal. Reteniendo cambios en el teléfono.", error);
-                break; 
-            }
+            // Si el servidor de Google lo procesó con éxito, lo sacamos de la cola
+            buzonEspera.shift();
+            localStorage.setItem("buzon_offline", JSON.stringify(buzonEspera));
+            
+        } catch (error) {
+            console.error("Fallo de envío temporal. Reteniendo cambios en el teléfono.", error);
+            break; 
         }
     }
+}
 </script>
 </body>
 </html>
